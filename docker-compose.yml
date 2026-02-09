@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    container_name: dashboard_kendaraan
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app  # Agar edit code di Mac langsung berubah di Docker (Hot Reload)
+    environment:
+      - PYTHONUNBUFFERED=1
