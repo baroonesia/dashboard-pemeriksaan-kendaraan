@@ -12,8 +12,8 @@ import os
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
-    page_title="Vehicle Inspector Pro",
-    page_icon="🚘",
+    page_title="Sistem Pengecekan Kendaraan BMN | BP3MI Jawa Tengah",
+  # page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -102,25 +102,49 @@ def get_laporan_cek():
     except: return pd.DataFrame()
 
 # --- FUNGSI LOGIN ---
+def get_users_db():
+    try:
+        df = conn.read(worksheet="Users", ttl=0)
+        return df
+    except Exception:
+        return pd.DataFrame()
+
 def check_login():
     if 'logged_in' not in st.session_state:
-        st.session_state['logged_in'] = False; st.session_state['user_role'] = ""; st.session_state['user_fullname'] = ""
+        st.session_state['logged_in'] = False
+        st.session_state['user_role'] = None
+        st.session_state['user_name'] = None
     
     if not st.session_state['logged_in']:
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            st.markdown("<br><br><div style='text-align:center; background:white; padding:30px; border-radius:15px; box-shadow:0 4px 15px rgba(0,0,0,0.1);'><h2>🚘 Vehicle Inspector</h2><p style='color:gray;'>Silakan masuk untuk melanjutkan</p></div>", unsafe_allow_html=True)
-            username = st.text_input("Username"); password = st.text_input("Password", type="password")
-            if st.button("Masuk Sistem", type="primary", use_container_width=True):
-                df_users = get_users_db()
-                if not df_users.empty:
-                    user = df_users[(df_users['Username'] == username) & (df_users['Password'] == password)]
-                    if not user.empty:
-                        st.session_state['logged_in'] = True; st.session_state['user_role'] = user.iloc[0]['Role']; st.session_state['user_fullname'] = user.iloc[0]['Nama_Lengkap']; st.rerun()
-                    else: st.error("Username atau Password salah.")
-                else: st.error("Database user error.")
-        return False
-    return True
+            st.markdown("<div style='text-align:center; margin-top:50px;'>", unsafe_allow_html=True)
+            st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/Logo_Kementerian_Pelindungan_Pekerja_Migran_Indonesia_-_BP2MI_v2_%282024%29.svg/960px-Logo_Kementerian_Pelindungan_Pekerja_Migran_Indonesia_-_BP2MI_v2_%282024%29.svg.png", width=100)
+            st.markdown("### Login Sistem Informasi Absensi")
+            st.markdown("BP3MI Jawa Tengah")
+            
+            username_input = st.text_input("Username")
+            password_input = st.text_input("Password", type="password")
+            
+            if st.button("Masuk Sistem", use_container_width=True):
+                with st.spinner("Memverifikasi..."):
+                    users_df = get_users_db()
+                    if not users_df.empty:
+                        user_found = users_df[
+                            (users_df['Username'] == username_input) & 
+                            (users_df['Password'] == password_input)
+                        ]
+                        if not user_found.empty:
+                            st.session_state['logged_in'] = True
+                            st.session_state['user_role'] = user_found.iloc[0]['Role']
+                            st.session_state['user_name'] = user_found.iloc[0]['Nama_Lengkap']
+                            st.success(f"Selamat datang, {st.session_state['user_name']}")
+                            time_lib.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Username atau Password salah!")
+                    else:
+                        st.error("Database user kosong.")
 
 # --- FUNGSI PDF ---
 class PDF(FPDF):
