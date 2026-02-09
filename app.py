@@ -238,7 +238,7 @@ if check_login():
                             else: tgl_last = "Belum Ada"; st_color = "info-value-red"
                     except: pass
                 else: st.error("DB Error")
-            with c3: km = st.number_input("Input KM Saat Ini", min_value=0, step=1, help="Masukkan angka Odometer (kilometer) kendaraan saat ini.", label_visibility="collapsed")
+            with c3: km = st.number_input("KM", min_value=0, step=1, label_visibility="collapsed", placeholder="Isi KM Dashboard...", help="Silakan masukkan angka kilometer terbaru yang tertera pada dashboard kendaraan.")
             with c4: tgl = st.date_input("Tanggal", datetime.now(), label_visibility="collapsed")
             st.write("")
             rc1, rc2 = st.columns(2)
