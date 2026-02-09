@@ -110,7 +110,7 @@ def check_login():
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
             st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/Logo_Kementerian_Pelindungan_Pekerja_Migran_Indonesia_-_BP2MI_v2_%282024%29.svg/960px-Logo_Kementerian_Pelindungan_Pekerja_Migran_Indonesia_-_BP2MI_v2_%282024%29.svg.png", width=100)
-            st.markdown("### Login Sistem Informasi Absensi")
+            st.markdown("### Login Sistem Pengecekan Kendaraan Dinas BP3MI Jawa Tengah")
             username = st.text_input("Username"); password = st.text_input("Password", type="password")
             if st.button("Masuk Sistem", type="primary", use_container_width=True):
                 df_users = get_users_db()
