@@ -1,7 +1,7 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from fpdf import FPDF
 from streamlit_option_menu import option_menu
 from PIL import Image
@@ -51,8 +51,13 @@ st.markdown("""
     .badge-rusak { background-color: #FEE2E2; color: #991B1B; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.85rem;}
     .badge-hilang { background-color: #FEF9C3; color: #854D0E; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.85rem;}
     
-    .metric-card { background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 10px; text-align: center; }
-    .metric-value { font-size: 2rem; font-weight: 700; color: #3B82F6; }
+    .metric-card { 
+        background-color: white; border: 1px solid #E2E8F0; 
+        padding: 20px; border-radius: 12px; text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+    .metric-value { font-size: 2.2rem; font-weight: 700; color: #0F172A; }
+    .metric-label { font-size: 0.9rem; color: #64748B; font-weight: 600; }
     
     div.row-widget.stRadio > div { background-color: transparent !important; border: none !important; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
@@ -64,24 +69,18 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- FUNGSI UTILITIES ---
 def compress_image(image_file):
-    """Kompresi Agresif agar string Base64 pendek dan muat di Cell Google Sheet"""
     if image_file is None: return ""
     try:
         image = Image.open(image_file)
         if image.mode != 'RGB': image = image.convert('RGB')
-        
-        # Resize ke Max Lebar 400px (Cukup untuk laporan PDF)
         max_width = 400
         ratio = max_width / float(image.size[0])
         new_height = int((float(image.size[1]) * float(ratio)))
         image = image.resize((max_width, new_height), Image.Resampling.LANCZOS)
-        
         buffer = io.BytesIO()
-        # Quality turunkan ke 40 agar size file kecil
         image.save(buffer, format="JPEG", quality=40, optimize=True)
         return base64.b64encode(buffer.getvalue()).decode()
-    except Exception as e:
-        return ""
+    except Exception as e: return ""
 
 def get_users_db():
     try:
@@ -126,7 +125,7 @@ def check_login():
 # --- FUNGSI PDF ---
 class PDF(FPDF):
     def header(self):
-        self.set_font('Arial', 'B', 14); self.cell(0, 10, 'LAPORAN PEMERIKSAAN KENDARAAN', 0, 1, 'C'); self.ln(5)
+        self.set_font('Arial', 'B', 12); self.cell(0, 10, 'Laporan Pemeriksaan Kendaraan Operasional | BP3MI', 0, 1, 'C'); self.ln(3)
     def footer(self):
         self.set_y(-15); self.set_font('Arial', 'I', 8); self.cell(0, 10, f'Halaman {self.page_no()}', 0, 0, 'C')
 
@@ -139,7 +138,7 @@ def create_pdf(row):
     for l, v in info: pdf.cell(45, 7, l, 1); pdf.cell(145, 7, v, 1, 1)
     pdf.ln(5)
     
-    # B. DETAIL (SEMUA ITEM LENGKAP)
+    # B. DETAIL
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 8, " B. DETAIL KONDISI", 1, 1, 'L', fill=True); pdf.set_font("Arial", size=9)
     items = {
         "Kaca & Spion": ['Kaca_Depan', 'Kaca_Kiri', 'Kaca_Kanan', 'Spion_Kanan', 'Spion_Kiri', 'Spion_Dalam'],
@@ -162,7 +161,7 @@ def create_pdf(row):
             else: pdf.cell(95, 6, "", 1, 1)
     pdf.ln(5)
     
-    # C. DOKUMENTASI FOTO (METODE TEMPFILE)
+    # C. FOTO
     if 'Foto_Bukti' in row and not pd.isna(row['Foto_Bukti']) and len(str(row['Foto_Bukti'])) > 100:
         pdf.set_font("Arial", 'B', 10); pdf.cell(0, 8, " C. DOKUMENTASI FOTO", 1, 1, 'L', fill=True)
         pdf.ln(2)
@@ -175,7 +174,6 @@ def create_pdf(row):
             os.remove(tmp_path)
         except Exception:
             pdf.set_font("Arial", 'I', 9); pdf.cell(0, 10, f"(Gagal memuat foto)", 0, 1)
-    
     pdf.ln(5)
     
     # D. CATATAN
@@ -187,11 +185,10 @@ def create_pdf(row):
     if pdf.get_y() > 230: pdf.add_page()
     y_sig = pdf.get_y(); pdf.set_font("Arial", '', 10)
     pdf.set_xy(10, y_sig); pdf.cell(90, 6, "Dibuat Oleh,", 0, 1, 'C'); pdf.set_xy(10, y_sig+6); pdf.cell(90, 6, "Petugas Pemeriksa", 0, 1, 'C')
-    pdf.set_xy(110, y_sig); pdf.cell(90, 6, "Diketahui Oleh,", 0, 1, 'C'); pdf.set_xy(110, y_sig+6); pdf.cell(90, 6, "Kepala Bagian / Admin", 0, 1, 'C')
+    pdf.set_xy(110, y_sig); pdf.cell(90, 6, "Diketahui Oleh,", 0, 1, 'C'); pdf.set_xy(110, y_sig+6); pdf.cell(90, 6, "", 0, 1, 'C')
     pdf.ln(25); y_name = pdf.get_y()
     pdf.set_xy(10, y_name); pdf.set_font("Arial", 'B', 10); pdf.cell(90, 6, f"( {row['Nama_Security']} )", 0, 1, 'C')
     pdf.set_xy(110, y_name); pdf.cell(90, 6, "( ................................... )", 0, 1, 'C')
-
     return pdf.output(dest='S').encode('latin-1')
 
 def render_item(label, value):
@@ -212,7 +209,7 @@ if check_login():
         st.write("---"); 
         if st.button("🚪 Logout", use_container_width=True): st.session_state['logged_in'] = False; st.rerun()
 
-    # --- HALAMAN 1: INPUT ---
+    # --- INPUT ---
     if selected == "Input Pemeriksaan":
         st.markdown("<div class='header-title'>📝 Input Pemeriksaan Kendaraan</div>", unsafe_allow_html=True)
         df_mobil = get_data_mobil(); df_history = get_laporan_cek()
@@ -241,7 +238,6 @@ if check_login():
                 else: st.error("DB Error")
             with c3: km = st.number_input("KM", min_value=0, step=1, label_visibility="collapsed")
             with c4: tgl = st.date_input("Tanggal", datetime.now(), label_visibility="collapsed")
-            
             st.write("")
             rc1, rc2 = st.columns(2)
             with rc1: st.markdown(f"<div class='info-box-stacked'><div class='info-label-stack'>Terakhir Dicek</div><div class='{st_color}'>{tgl_last}</div></div>", unsafe_allow_html=True)
@@ -256,14 +252,14 @@ if check_login():
             with t1:
                 ca, cb = st.columns(2)
                 with ca: st.write("**Kaca Depan**"); kd=opsi("Kaca_Depan"); st.write("**Kaca Kiri**"); kk=opsi("Kaca_Kiri"); st.write("**Kaca Kanan**"); kka=opsi("Kaca_Kanan"); st.write("**Spion Kanan**"); sk=opsi("Spion_Kanan"); st.write("**Spion Kiri**"); ski=opsi("Spion_Kiri"); st.write("**Spion Dalam**"); sd=opsi("Spion_Dalam"); st.divider(); st.write("**Body Depan**"); bod=opsi("Body_Depan"); st.write("**Body Grill**"); bog=opsi("Body_Grill"); st.write("**Body Fender**"); bof=opsi("Body_Fender")
-                with cb: st.write("**Ext. Talang Air**"); eta=opsi("Ext_Talang_Air"); st.write("**Ext. Plat Depan**"); epd=opsi("Ext_Plat_Depan"); st.write("**Ext. Plat Belakang**"); epb=opsi("Ext_Plat_Belakang"); st.divider(); st.write("**Pintu Dpn Kanan**"); pdk=opsi("Pintu_D_Kanan"); st.write("**Pintu Dpn Kiri**"); pdki=opsi("Pintu_D_Kiri"); st.write("**Pintu Blk Kanan**"); pbk=opsi("Pintu_B_Kanan"); st.write("**Pintu Blk Kiri**"); pbki=opsi("Pintu_B_Kiri"); st.write("**Pintu Bagasi**"); pbg=opsi("Pintu_Bagasi")
+                with cb: st.write("**Talang Air**"); eta=opsi("Ext_Talang_Air"); st.write("**Plat Depan**"); epd=opsi("Ext_Plat_Depan"); st.write("**Plat Belakang**"); epb=opsi("Ext_Plat_Belakang"); st.divider(); st.write("**Pintu Depan Kanan**"); pdk=opsi("Pintu_D_Kanan"); st.write("**Pintu Depan Kiri**"); pdki=opsi("Pintu_D_Kiri"); st.write("**Pintu Belakang Kanan**"); pbk=opsi("Pintu_B_Kanan"); st.write("**Pintu Belakang Kiri**"); pbki=opsi("Pintu_B_Kiri"); st.write("**Pintu Bagasi**"); pbg=opsi("Pintu_Bagasi")
             with t2:
                 cc, cd = st.columns(2)
                 with cc: st.write("**Ban Kanan Depan**"); bkd=opsi("Ban_Kanan_Depan"); st.write("**Ban Kiri Depan**"); bkid=opsi("Ban_Kiri_Depan"); st.write("**Ban Serep**"); bs=opsi("Ban_Serep")
                 with cd: st.write("**Ban Kanan Belakang**"); bkb=opsi("Ban_Kanan_Belakang"); st.write("**Ban Kiri Belakang**"); bkib=opsi("Ban_Kiri_Belakang")
             with t3:
                 ce, cf = st.columns(2)
-                with ce: st.write("**Jok**"); ij=opsi("Int_Jok"); st.write("**Stir**"); ist=opsi("Int_Stir"); st.write("**Karpet**"); ik=opsi("Int_Karpet"); st.write("**Persneling**"); ip=opsi("Int_Persneling")
+                with ce: st.write("**Jok**"); ij=opsi("Int_Jok"); st.write("**Setir**"); ist=opsi("Int_Stir"); st.write("**Karpet**"); ik=opsi("Int_Karpet"); st.write("**Persneling**"); ip=opsi("Int_Persneling")
                 with cf: st.write("**Rem Tangan**"); irt=opsi("Int_Rem_Tangan"); st.write("**Dashboard**"); idb=opsi("Int_Dashboard"); st.write("**AC**"); iac=opsi("Int_AC")
             with t4:
                 cg, ch = st.columns(2)
@@ -272,7 +268,7 @@ if check_login():
             with t5:
                 ci, cj = st.columns(2)
                 with ci: st.write("**Lampu Utama**"); lu=opsi("Lampu_Utama"); st.write("**Lampu Kecil**"); lk=opsi("Lampu_Kecil"); st.write("**Lampu Rem**"); lr=opsi("Lampu_Rem"); st.write("**Sein Depan**"); snd=opsi("Sein_Depan"); st.write("**Sein Belakang**"); snb=opsi("Sein_Belakang")
-                with cj: st.write("**Kunci Roda**"); kr=opsi("Kunci_Roda"); st.write("**Dongkrak**"); dg=opsi("Dongkrak"); st.write("**P3K**"); p3k=opsi("P3K"); st.write("**STNK**"); stnk=opsi("STNK")
+                with cj: st.write("**Kunci Roda**"); kr=opsi("Kunci_Roda"); st.write("**Dongkrak**"); dg=opsi("Dongkrak"); st.write("**P3K**"); p3k=opsi("Kotak P3K"); st.write("**STNK**"); stnk=opsi("STNK")
 
             st.write("---")
             st.markdown("##### 📸 Dokumentasi Foto")
@@ -305,7 +301,7 @@ if check_login():
                         st.success("✅ Tersimpan!"); st.balloons()
                     except Exception as e: st.error(f"Gagal: {e}")
 
-    # --- HALAMAN 2: LAPORAN ---
+    # --- LAPORAN ---
     elif selected == "Laporan Data":
         st.markdown("<div class='header-title'>🖨️ Laporan Data</div>", unsafe_allow_html=True)
         df_lap = get_laporan_cek()
@@ -328,72 +324,86 @@ if check_login():
                     if 'Foto_Bukti' in row and row['Foto_Bukti'] and len(str(row['Foto_Bukti'])) > 50:
                         try: st.image(base64.b64decode(row['Foto_Bukti']), width=300, caption="Foto Bukti")
                         except: pass
-                    
-                    items_map = {
-                        "Kaca & Spion": ['Kaca_Depan', 'Kaca_Kiri', 'Kaca_Kanan', 'Spion_Kanan', 'Spion_Kiri', 'Spion_Dalam'],
-                        "Ban & Roda": ['Ban_Kanan_Depan', 'Ban_Kiri_Depan', 'Ban_Kanan_Belakang', 'Ban_Kiri_Belakang', 'Ban_Serep'],
-                        "Eksterior & Body": ['Ext_Talang_Air', 'Ext_Plat_Belakang', 'Ext_Plat_Depan', 'Body_Depan', 'Body_Grill', 'Body_Fender'],
-                        "Pintu-Pintu": ['Pintu_D_Kanan', 'Pintu_D_Kiri', 'Pintu_B_Kanan', 'Pintu_B_Kiri', 'Pintu_Bagasi'],
-                        "Interior": ['Int_Jok', 'Int_Stir', 'Int_Karpet', 'Int_Persneling', 'Int_Rem_Tangan', 'Int_Dashboard', 'Int_AC'],
-                        "Mesin": ['Mesin_Oli', 'Mesin_Minyak_Rem', 'Mesin_Air_Radiator', 'Mesin_Air_Accu', 'Mesin_Air_Wiper'],
-                        "Lampu & Signal": ['Lampu_Utama', 'Lampu_Kecil', 'Lampu_Rem', 'Sein_Depan', 'Sein_Belakang'],
-                        "Kelengkapan": ['Kunci_Roda', 'Dongkrak', 'P3K', 'STNK']
-                    }
+                    items_map = {"Kaca & Spion":['Kaca_Depan','Kaca_Kiri','Kaca_Kanan','Spion_Kanan','Spion_Kiri','Spion_Dalam'], "Ban & Roda":['Ban_Kanan_Depan','Ban_Kiri_Depan','Ban_Kanan_Belakang','Ban_Kiri_Belakang','Ban_Serep'], "Eksterior":['Ext_Talang_Air','Ext_Plat_Belakang','Ext_Plat_Depan','Body_Depan','Body_Grill','Body_Fender'], "Pintu":['Pintu_D_Kanan','Pintu_D_Kiri','Pintu_B_Kanan','Pintu_B_Kiri','Pintu_Bagasi'], "Interior":['Int_Jok','Int_Stir','Int_Karpet','Int_Persneling','Int_Rem_Tangan','Int_Dashboard','Int_AC'], "Mesin":['Mesin_Oli','Mesin_Minyak_Rem','Mesin_Air_Radiator','Mesin_Air_Accu','Mesin_Air_Wiper'], "Lampu":['Lampu_Utama','Lampu_Kecil','Lampu_Rem','Sein_Depan','Sein_Belakang'], "Kelengkapan":['Kunci_Roda','Dongkrak','P3K','STNK']}
                     for cat, cols in items_map.items():
                         st.markdown(f"##### {cat}"); cl = st.columns(4)
                         for i, cn in enumerate(cols): 
                             with cl[i%4]: render_item(cn, row.get(cn, "-"))
                         st.divider()
                     st.warning(f"📝 NOTE: {row['Keterangan']}")
-                    if st.button("📄 DOWNLOAD PDF", type="primary"): st.download_button("⬇️ Unduh", create_pdf(row), f"Laporan.pdf", "application/pdf")
+                    if st.button("📄 DOWNLOAD PDF", type="primary"): st.download_button("⬇️ Unduh", create_pdf(row), f"Laporan Pengecekan Kendaraan.pdf", "application/pdf")
             else: st.info("Data Kosong")
         else: st.info("DB Kosong")
     
-    # --- HALAMAN 3: DASHBOARD ---
+    # --- DASHBOARD & KONTROL ---
     elif selected == "Dashboard & Kontrol":
         st.markdown("<div class='header-title'>📊 Dashboard & Kontrol Unit</div>", unsafe_allow_html=True)
         df_history = get_laporan_cek(); df_mobil = get_data_mobil()
+        
         if not df_history.empty and not df_mobil.empty:
-            st.subheader("📋 Status Kontrol Pemeriksaan (Periode 2 Minggu)")
-            status_data = []; today = datetime.now()
-            for index, row in df_mobil.iterrows():
-                nama_mobil = row['Nama_Mobil']; nopol = row['Nomor_Polisi']
-                hist = df_history[df_history['Merk_Kendaraan'] == nama_mobil]
-                if not hist.empty:
-                    hist['Tanggal'] = pd.to_datetime(hist['Tanggal'])
-                    last_check = hist.sort_values('Tanggal', ascending=False).iloc[0]['Tanggal']
-                    days_diff = (today - last_check).days
-                    if days_diff <= 14: status = "✅ Sudah Dicek"; ket_stat = f"{days_diff} hari lalu"
-                    else: status = "⚠️ Perlu Cek"; ket_stat = f"Telat {days_diff} hari"
-                    tgl_str = last_check.strftime("%d-%b-%Y")
-                else: status = "❌ Belum Pernah"; tgl_str = "-"; ket_stat = "Data Kosong"; days_diff = 999
-                status_data.append({"Unit": nama_mobil, "Plat": nopol, "Terakhir": tgl_str, "Status": status, "Ket": ket_stat, "s": days_diff})
-            
-            st.dataframe(pd.DataFrame(status_data).sort_values('s')[['Unit', 'Plat', 'Terakhir', 'Status', 'Ket']], use_container_width=True, hide_index=True)
-            st.divider(); st.subheader("📈 Analisis Kerusakan")
-            
             df_history['Tanggal'] = pd.to_datetime(df_history['Tanggal'])
-            bln_dash = st.selectbox("Bulan", ["Semua"] + sorted(df_history['Tanggal'].dt.strftime('%Y-%m').unique().tolist(), reverse=True))
-            df_dash = df_history.copy()
-            if bln_dash != "Semua": df_dash = df_dash[df_dash['Tanggal'].dt.strftime('%Y-%m') == bln_dash]
             
-            if not df_dash.empty:
-                cols_check = [c for c in df_dash.columns if c not in ['Timestamp','Nama_Security','Tanggal','Merk_Kendaraan','Nomor_Polisi','Kilometer','Keterangan', 'Foto_Bukti']]
-                rusak_per_mobil = {}; rusak_per_item = {}
-                for idx, r in df_dash.iterrows():
+            # KPI CALCULATION
+            total_armada = len(df_mobil); total_history = len(df_history)
+            today = datetime.now(); overdue_count = 0; unit_sehat_count = 0; unit_rusak_list = []
+
+            for _, row_m in df_mobil.iterrows():
+                nm = row_m['Nama_Mobil']
+                h = df_history[df_history['Merk_Kendaraan'] == nm]
+                if not h.empty:
+                    last_rec = h.sort_values('Tanggal', ascending=False).iloc[0]; last_date = last_rec['Tanggal']
+                    if (today - last_date).days > 14: overdue_count += 1
+                    
+                    cols_check = [c for c in df_history.columns if c not in ['Timestamp','Nama_Security','Tanggal','Merk_Kendaraan','Nomor_Polisi','Kilometer','Keterangan', 'Foto_Bukti']]
+                    is_rusak = False
                     for c in cols_check:
-                        if r[c] in ["Rusak", "Hilang/Kurang"]:
-                            rusak_per_mobil[r['Merk_Kendaraan']] = rusak_per_mobil.get(r['Merk_Kendaraan'], 0) + 1
-                            rusak_per_item[c] = rusak_per_item.get(c, 0) + 1
+                        if last_rec.get(c) in ["Rusak", "Hilang/Kurang"]: is_rusak = True; break
+                    
+                    if is_rusak: unit_rusak_list.append({"Unit": nm, "Tgl": last_date.strftime("%d-%m-%Y"), "Inspector": last_rec['Nama_Security'], "Note": last_rec['Keterangan']})
+                    else: unit_sehat_count += 1
+                else: overdue_count += 1
+            
+            kp1, kp2, kp3, kp4 = st.columns(4)
+            with kp1: st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_armada}</div><div class='metric-label'>Total Armada</div></div>", unsafe_allow_html=True)
+            with kp2: st.markdown(f"<div class='metric-card'><div class='metric-value' style='color:#166534'>{unit_sehat_count}</div><div class='metric-label'>Unit Sehat</div></div>", unsafe_allow_html=True)
+            with kp3: st.markdown(f"<div class='metric-card'><div class='metric-value' style='color:#DC2626'>{len(unit_rusak_list)}</div><div class='metric-label'>Perlu Perbaikan</div></div>", unsafe_allow_html=True)
+            with kp4: st.markdown(f"<div class='metric-card'><div class='metric-value' style='color:#D97706'>{overdue_count}</div><div class='metric-label'>Telat Cek (>14 Hr)</div></div>", unsafe_allow_html=True)
+            
+            st.write("---")
+            
+            t_jadwal, t_rusak, t_stats = st.tabs(["📅 Kontrol Jadwal", "🛠️ Unit Bermasalah", "📈 Statistik"])
+            
+            with t_jadwal:
+                st.subheader("📋 Status Kepatuhan")
+                status_data = []
+                for index, row in df_mobil.iterrows():
+                    nama_mobil = row['Nama_Mobil']; nopol = row['Nomor_Polisi']
+                    hist = df_history[df_history['Merk_Kendaraan'] == nama_mobil]
+                    if not hist.empty:
+                        last_check = hist.sort_values('Tanggal', ascending=False).iloc[0]['Tanggal']; days_diff = (today - last_check).days
+                        if days_diff <= 14: status = "✅ OK"; ket_stat = f"{days_diff} hari lalu"
+                        else: status = "⚠️ TELAT"; ket_stat = f"Telat {days_diff} hari"
+                        tgl_str = last_check.strftime("%d-%b-%Y")
+                    else: status = "❌ BELUM"; tgl_str = "-"; ket_stat = "Belum pernah cek"; days_diff = 999
+                    status_data.append({"Unit": nama_mobil, "Plat": nopol, "Terakhir Cek": tgl_str, "Status": status, "Ket": ket_stat, "s": days_diff})
                 
-                g1, g2 = st.columns(2)
-                with g1: 
-                    st.write("**Top Kendaraan Rusak**")
-                    if rusak_per_mobil: st.bar_chart(pd.DataFrame(list(rusak_per_mobil.items()), columns=['Mobil', 'Jml']).set_index('Mobil'))
-                    else: st.info("Nihil")
-                with g2: 
-                    st.write("**Top Item Rusak**")
-                    if rusak_per_item: st.bar_chart(pd.DataFrame(list(rusak_per_item.items()), columns=['Item', 'Jml']).set_index('Item'))
-                    else: st.info("Nihil")
-            else: st.info("Tidak ada data.")
-        else: st.info("DB Kosong")
+                df_stat = pd.DataFrame(status_data).sort_values('s', ascending=False)
+                if st.checkbox("Tampilkan Hanya yang Telat"): df_stat = df_stat[df_stat['s'] > 14]
+                st.dataframe(df_stat[['Unit', 'Plat', 'Terakhir Cek', 'Status', 'Ket']], use_container_width=True, hide_index=True)
+            
+            with t_rusak:
+                st.subheader("🛠️ Daftar Unit Sedang Bermasalah")
+                if unit_rusak_list: st.dataframe(pd.DataFrame(unit_rusak_list), use_container_width=True, hide_index=True)
+                else: st.success("🎉 Tidak ada unit yang sedang rusak.")
+            
+            with t_stats:
+                st.subheader("📈 Tren Kerusakan")
+                cols_check = [c for c in df_history.columns if c not in ['Timestamp','Nama_Security','Tanggal','Merk_Kendaraan','Nomor_Polisi','Kilometer','Keterangan', 'Foto_Bukti']]
+                rusak_per_item = {}
+                for idx, r in df_history.iterrows():
+                    for c in cols_check:
+                        if r[c] in ["Rusak", "Hilang/Kurang"]: rusak_per_item[c] = rusak_per_item.get(c, 0) + 1
+                if rusak_per_item: st.bar_chart(pd.DataFrame(list(rusak_per_item.items()), columns=['Komponen', 'Jml']).set_index('Komponen'))
+                else: st.info("Belum ada data kerusakan.")
+
+        else: st.info("Database masih kosong.")
