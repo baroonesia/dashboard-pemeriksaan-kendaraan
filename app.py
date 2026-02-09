@@ -4,6 +4,9 @@ import pandas as pd
 from datetime import datetime
 from fpdf import FPDF
 from streamlit_option_menu import option_menu
+from PIL import Image
+import io
+import base64
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -13,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS CUSTOM (UI MODERN & STATUS BADGE) ---
+# --- CSS CUSTOM (CLEAN UI) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
@@ -22,7 +25,6 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
     
-    /* Login & Card Styling */
     .login-container {
         background-color: white; padding: 40px; border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center;
@@ -32,46 +34,71 @@ st.markdown("""
         border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         margin-bottom: 20px;
     }
-    .info-box {
-        background-color: #EFF6FF; border-left: 5px solid #3B82F6;
-        padding: 15px; border-radius: 5px; color: #1E3A8A; font-weight: 600;
+    .metric-card {
+        background-color: #F8FAFC; border: 1px solid #E2E8F0;
+        padding: 15px; border-radius: 10px; text-align: center;
     }
-    .warning-box {
-        background-color: #FEF2F2; border-left: 5px solid #EF4444;
-        padding: 15px; border-radius: 5px; color: #991B1B; font-weight: 600;
-        margin-top: 20px;
+    .metric-value { font-size: 2rem; font-weight: 700; color: #3B82F6; }
+    .metric-label { font-size: 0.9rem; color: #64748B; }
+
+    /* Info Box Styling */
+    .info-box-row {
+        background-color: #F8FAFC; padding: 12px 15px; border-radius: 8px;
+        border: 1px solid #E2E8F0; display: flex; align-items: center; gap: 10px;
+        height: 100%;
     }
-    .header-title { font-size: 1.5rem; font-weight: 700; color: #1E293B; }
+    .info-box-stacked {
+        background-color: #F1F5F9; padding: 10px; border-radius: 8px;
+        border: 1px solid #E2E8F0; text-align: center;
+    }
     
-    /* STATUS BADGES (Indikator Warna) */
-    .badge-baik {
-        background-color: #DCFCE7; color: #166534; 
-        padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;
-        border: 1px solid #BBF7D0;
-    }
-    .badge-rusak {
-        background-color: #FEE2E2; color: #991B1B; 
-        padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;
-        border: 1px solid #FECACA;
-    }
-    .badge-hilang {
-        background-color: #FEF9C3; color: #854D0E; 
-        padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;
-        border: 1px solid #FEF08A;
-    }
-    .item-label {
-        font-size: 0.9rem; color: #64748B; margin-bottom: 2px;
+    .label-text { color: #64748B; font-size: 0.9rem; font-weight: 500; }
+    .value-text { color: #0F172A; font-size: 1rem; font-weight: 700; }
+    
+    .info-label-stack { font-size: 0.75rem; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;}
+    .info-value-stack { font-size: 1.1rem; font-weight: 700; color: #0F172A; }
+    .info-value-red { font-size: 1.1rem; font-weight: 700; color: #EF4444; } 
+    .info-value-green { font-size: 1.1rem; font-weight: 700; color: #166534; } 
+
+    .badge-baik { background-color: #DCFCE7; color: #166534; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.85rem;}
+    .badge-rusak { background-color: #FEE2E2; color: #991B1B; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.85rem;}
+    .badge-hilang { background-color: #FEF9C3; color: #854D0E; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.85rem;}
+
+    div.row-widget.stRadio > div {
+        background-color: transparent !important;
+        border: none !important;
     }
     
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
-    div.row-widget.stRadio > div {flex-direction: row;}
 </style>
 """, unsafe_allow_html=True)
 
 # --- KONEKSI DATABASE ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNGSI LOAD DATA ---
+# --- FUNGSI UTILITIES ---
+def compress_image(image_file):
+    """Mengubah file upload menjadi string base64 yang dikompres (agar muat di GSheet)"""
+    if image_file is None:
+        return ""
+    try:
+        image = Image.open(image_file)
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Resize jika terlalu besar (Max lebar 500px)
+        max_width = 500
+        ratio = max_width / float(image.size[0])
+        new_height = int((float(image.size[1]) * float(ratio)))
+        image = image.resize((max_width, new_height), Image.Resampling.LANCZOS)
+        
+        # Simpan ke buffer
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=50) # Kompresi kualitas 50%
+        return base64.b64encode(buffer.getvalue()).decode()
+    except Exception as e:
+        return ""
+
 def get_users_db():
     try:
         df = conn.read(worksheet="users", ttl=0)
@@ -134,7 +161,7 @@ class PDF(FPDF):
 def create_pdf(row):
     pdf = PDF(); pdf.add_page(); pdf.set_font("Arial", size=10)
     
-    # A. INFO UMUM
+    # HEADER SECTION
     pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, " A. INFORMASI UMUM", 1, 1, 'L', fill=True)
     pdf.set_font("Arial", size=10)
@@ -146,7 +173,7 @@ def create_pdf(row):
     for l, v in info: pdf.cell(45, 7, l, 1); pdf.cell(145, 7, v, 1, 1)
     pdf.ln(5)
     
-    # B. DETAIL KONDISI
+    # DETAIL SECTION
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, " B. DETAIL KONDISI", 1, 1, 'L', fill=True)
     pdf.set_font("Arial", size=9)
@@ -179,27 +206,69 @@ def create_pdf(row):
                 pdf.cell(45, 6, v2, 1, 1)
                 pdf.set_text_color(0,0,0)
             else: pdf.cell(95, 6, "", 1, 1)
-            
-    pdf.ln(5); pdf.set_font("Arial", 'B', 10); pdf.cell(0, 8, " C. CATATAN TAMBAHAN", 1, 1, 'L', fill=True)
+    
+    pdf.ln(5)
+    
+    # FOTO DOKUMENTASI (Jika Ada)
+    if 'Foto_Bukti' in row and row['Foto_Bukti'] and len(str(row['Foto_Bukti'])) > 10:
+        pdf.set_font("Arial", 'B', 10); pdf.cell(0, 8, " C. DOKUMENTASI FOTO", 1, 1, 'L', fill=True)
+        try:
+            # Decode Base64 ke Image
+            img_data = base64.b64decode(row['Foto_Bukti'])
+            img_stream = io.BytesIO(img_data)
+            # Simpan sementara di memori PDF
+            pdf.image(img_stream, x=10, w=90) # Lebar 90mm
+            pdf.ln(5)
+        except:
+            pdf.cell(0, 10, "(Gagal memuat foto)", 0, 1)
+    
+    pdf.ln(5)
+    
+    # CATATAN
+    pdf.set_font("Arial", 'B', 10); pdf.cell(0, 8, " D. CATATAN TAMBAHAN", 1, 1, 'L', fill=True)
     pdf.set_font("Arial", size=10); pdf.multi_cell(0, 6, str(row['Keterangan']), 1)
+    
+    pdf.ln(10)
+    
+    # KOLOM TANDA TANGAN (LAYOUT RAPI)
+    y_sig = pdf.get_y()
+    
+    # Cek jika halaman tidak cukup, pindah halaman
+    if y_sig > 240: 
+        pdf.add_page()
+        y_sig = pdf.get_y()
+
+    pdf.set_font("Arial", '', 10)
+    
+    # Kolom Kiri: Dibuat Oleh
+    pdf.set_xy(10, y_sig)
+    pdf.cell(90, 6, "Dibuat Oleh,", 0, 1, 'C')
+    pdf.set_xy(10, y_sig + 6)
+    pdf.cell(90, 6, "Petugas Pemeriksa", 0, 1, 'C')
+    
+    # Kolom Kanan: Diketahui Oleh
+    pdf.set_xy(110, y_sig)
+    pdf.cell(90, 6, "Diketahui Oleh,", 0, 1, 'C')
+    pdf.set_xy(110, y_sig + 6)
+    pdf.cell(90, 6, "Kepala Bagian / Admin", 0, 1, 'C')
+    
+    # Space Tanda Tangan
+    pdf.ln(25)
+    y_name = pdf.get_y()
+    
+    # Nama Penanda Tangan
+    pdf.set_xy(10, y_name)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(90, 6, f"( {row['Nama_Security']} )", 0, 1, 'C')
+    
+    pdf.set_xy(110, y_name)
+    pdf.cell(90, 6, "( ................................... )", 0, 1, 'C')
+
     return pdf.output(dest='S').encode('latin-1')
 
-# --- HELPER VIEW ---
 def render_item(label, value):
-    # Tentukan Warna Badge
-    if value == "Baik":
-        badge_class = "badge-baik"
-    elif value == "Rusak":
-        badge_class = "badge-rusak"
-    else:
-        badge_class = "badge-hilang"
-    
-    st.markdown(f"""
-        <div style="margin-bottom: 10px;">
-            <div class="item-label">{label.replace('_', ' ')}</div>
-            <span class="{badge_class}">{value}</span>
-        </div>
-    """, unsafe_allow_html=True)
+    badge_class = "badge-baik" if value == "Baik" else ("badge-rusak" if value == "Rusak" else "badge-hilang")
+    st.markdown(f"""<div style="margin-bottom: 10px;"><div style="font-size:0.85rem; color:#666;">{label.replace('_', ' ')}</div><span class="{badge_class}">{value}</span></div>""", unsafe_allow_html=True)
 
 # ================= APLIKASI UTAMA =================
 if check_login():
@@ -212,11 +281,12 @@ if check_login():
         st.caption(f"Role: {USER_ROLE}")
         st.write("---")
         
-        opt_list = ["Input Pemeriksaan"]
-        ico_list = ["pencil-square"]
+        opt_list = ["Input Pemeriksaan", "Laporan Data"]
+        ico_list = ["pencil-square", "file-earmark-pdf"]
+        
         if USER_ROLE == "Administrator":
-            opt_list.append("Laporan Data")
-            ico_list.append("file-earmark-pdf")
+            opt_list.append("Dashboard & Kontrol")
+            ico_list.append("speedometer2")
             
         selected = option_menu(
             menu_title=None, options=opt_list, icons=ico_list, default_index=0,
@@ -231,138 +301,139 @@ if check_login():
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state['logged_in'] = False; st.rerun()
 
-    # --- HALAMAN 1: INPUT PEMERIKSAAN ---
+    # --- HALAMAN 1: INPUT ---
     if selected == "Input Pemeriksaan":
         st.markdown("<div class='header-title'>📝 Input Pemeriksaan Kendaraan</div>", unsafe_allow_html=True)
-        st.markdown("Isi checklist kondisi di bawah.", unsafe_allow_html=True)
         
+        df_mobil = get_data_mobil()
+        df_history = get_laporan_cek()
+        
+        nopol_display = "-"
+        pilih_mobil = ""
+        tgl_terakhir_display = "-"
+        status_color_class = "info-value-stack"
+
+        # --- LAYOUT IDENTITAS (RAAPI) ---
         with st.container():
             st.markdown("<div class='stCard'>", unsafe_allow_html=True)
-            df_mobil = get_data_mobil()
-            c1, c2, c3 = st.columns([1, 1.5, 1])
+            
+            c1, c2, c3, c4 = st.columns([1.5, 1.5, 1, 1])
             with c1:
-                st.text_input("👮 Pemeriksa", value=USER_NAME, disabled=True)
-                tanggal = st.date_input("📅 Tanggal", datetime.now())
+                st.markdown(f"""
+                <div class='info-box-row' style='margin-top:2px;'>
+                    <span class='label-text'>Pemeriksa :</span>
+                    <span class='value-text'>{USER_NAME}</span>
+                </div>
+                """, unsafe_allow_html=True)
             with c2:
-                nopol_display = "-"
-                pilih_mobil = ""
                 if not df_mobil.empty:
-                    pilih_mobil = st.selectbox("🚘 Pilih Unit", df_mobil['Nama_Mobil'].unique())
+                    pilih_mobil = st.selectbox("Unit Kendaraan", df_mobil['Nama_Mobil'].unique(), label_visibility="collapsed")
                     try:
-                        row = df_mobil[df_mobil['Nama_Mobil'] == pilih_mobil]
-                        if not row.empty: nopol_display = row['Nomor_Polisi'].iloc[0]
+                        row_m = df_mobil[df_mobil['Nama_Mobil'] == pilih_mobil]
+                        if not row_m.empty: nopol_display = row_m['Nomor_Polisi'].iloc[0]
+                        
+                        if not df_history.empty:
+                            hist_mobil = df_history[df_history['Merk_Kendaraan'] == pilih_mobil]
+                            if not hist_mobil.empty:
+                                hist_mobil['Tanggal'] = pd.to_datetime(hist_mobil['Tanggal'])
+                                last_date = hist_mobil.sort_values('Tanggal', ascending=False).iloc[0]['Tanggal']
+                                tgl_terakhir_display = last_date.strftime("%d-%b-%Y")
+                                days_diff = (datetime.now() - last_date).days
+                                if days_diff > 14: status_color_class = "info-value-red"
+                                else: status_color_class = "info-value-green"
+                            else:
+                                tgl_terakhir_display = "Belum Ada"
+                                status_color_class = "info-value-red"
                     except: pass
-                else: pilih_mobil = st.text_input("Nama Mobil")
-                st.markdown(f"<div class='info-box'>Plat Nomor: {nopol_display}</div>", unsafe_allow_html=True)
+                else: st.error("DB Error")
             with c3:
-                kilometer = st.number_input("📟 KM Saat Ini", min_value=0, step=1)
+                kilometer = st.number_input("KM", min_value=0, step=1, label_visibility="collapsed", placeholder="KM")
+            with c4:
+                tanggal = st.date_input("Tanggal", datetime.now(), label_visibility="collapsed")
+
+            st.write("") 
+            r2_c1, r2_c2 = st.columns(2)
+            with r2_c1:
+                st.markdown(f"""<div class='info-box-stacked'><div class='info-label-stack'>Terakhir Dicek</div><div class='{status_color_class}'>{tgl_terakhir_display}</div></div>""", unsafe_allow_html=True)
+            with r2_c2:
+                st.markdown(f"""<div class='info-box-stacked'><div class='info-label-stack'>Nomor Polisi</div><div class='info-value-stack'>{nopol_display}</div></div>""", unsafe_allow_html=True)
+            
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.write("#### 📋 Checklist Kondisi")
-        def opsi(k): return st.radio(k, ["Baik", "Rusak", "Hilang/Kurang"], horizontal=True, label_visibility="collapsed", key=k)
-
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🪟 Eksterior & Pintu", "🚗 Ban & Kaki-kaki", "🛋️ Interior", "⚙️ Mesin", "💡 Lampu & Kelengkapan"])
-
-        with tab1:
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.write("**Kaca Depan**"); kd = opsi("Kaca_Depan")
-                st.write("**Kaca Kiri**"); kk = opsi("Kaca_Kiri")
-                st.write("**Kaca Kanan**"); kka = opsi("Kaca_Kanan")
-                st.write("**Spion Kanan**"); sk = opsi("Spion_Kanan")
-                st.write("**Spion Kiri**"); ski = opsi("Spion_Kiri")
-                st.write("**Spion Dalam**"); sd = opsi("Spion_Dalam")
-                st.divider()
-                st.write("**Body Depan**"); bod = opsi("Body_Depan")
-                st.write("**Body Grill**"); bog = opsi("Body_Grill")
-                st.write("**Body Fender**"); bof = opsi("Body_Fender")
-            with col_b:
-                st.write("**Ext. Talang Air**"); eta = opsi("Ext_Talang_Air")
-                st.write("**Ext. Plat Depan**"); epd = opsi("Ext_Plat_Depan")
-                st.write("**Ext. Plat Belakang**"); epb = opsi("Ext_Plat_Belakang")
-                st.divider()
-                st.write("**Pintu Depan Kanan**"); pdk = opsi("Pintu_D_Kanan")
-                st.write("**Pintu Depan Kiri**"); pdki = opsi("Pintu_D_Kiri")
-                st.write("**Pintu Blkg Kanan**"); pbk = opsi("Pintu_B_Kanan")
-                st.write("**Pintu Blkg Kiri**"); pbki = opsi("Pintu_B_Kiri")
-                st.write("**Pintu Bagasi**"); pbg = opsi("Pintu_Bagasi")
-
-        with tab2:
-            col_c, col_d = st.columns(2)
-            with col_c:
-                st.write("**Ban Kanan Depan**"); bkd = opsi("Ban_Kanan_Depan")
-                st.write("**Ban Kiri Depan**"); bkid = opsi("Ban_Kiri_Depan")
-                st.write("**Ban Serep**"); bs = opsi("Ban_Serep")
-            with col_d:
-                st.write("**Ban Kanan Belakang**"); bkb = opsi("Ban_Kanan_Belakang")
-                st.write("**Ban Kiri Belakang**"); bkib = opsi("Ban_Kiri_Belakang")
-
-        with tab3:
-            col_e, col_f = st.columns(2)
-            with col_e:
-                st.write("**Jok**"); ij = opsi("Int_Jok")
-                st.write("**Stir**"); ist = opsi("Int_Stir")
-                st.write("**Karpet**"); ik = opsi("Int_Karpet")
-                st.write("**Persneling**"); ip = opsi("Int_Persneling")
-            with col_f:
-                st.write("**Rem Tangan**"); irt = opsi("Int_Rem_Tangan")
-                st.write("**Dashboard**"); idb = opsi("Int_Dashboard")
-                st.write("**AC**"); iac = opsi("Int_AC")
-
-        with tab4:
-            col_g, col_h = st.columns(2)
-            with col_g:
-                st.write("**Oli Mesin**"); mo = opsi("Mesin_Oli")
-                st.write("**Minyak Rem**"); mmr = opsi("Mesin_Minyak_Rem")
-                st.write("**Air Radiator**"); mar = opsi("Mesin_Air_Radiator")
-            with col_h:
-                st.write("**Air Accu**"); maa = opsi("Mesin_Air_Accu")
-                st.write("**Air Wiper**"); maw = opsi("Mesin_Air_Wiper")
-
-        with tab5:
-            col_i, col_j = st.columns(2)
-            with col_i:
-                st.write("**Lampu Utama**"); lu = opsi("Lampu_Utama")
-                st.write("**Lampu Kecil**"); lk = opsi("Lampu_Kecil")
-                st.write("**Lampu Rem**"); lr = opsi("Lampu_Rem")
-                st.write("**Sein Depan**"); snd = opsi("Sein_Depan")
-                st.write("**Sein Belakang**"); snb = opsi("Sein_Belakang")
-            with col_j:
-                st.write("**Kunci Roda**"); kr = opsi("Kunci_Roda")
-                st.write("**Dongkrak**"); dg = opsi("Dongkrak")
-                st.write("**P3K**"); p3k = opsi("P3K")
-                st.write("**STNK**"); stnk = opsi("STNK")
-
-        st.write("---")
-        with st.container():
-            st.markdown("""<div class='warning-box'>📝 CATATAN TAMBAHAN<br><span style='font-weight:400; font-size:0.9rem'>Jelaskan kerusakan detail di sini.</span></div>""", unsafe_allow_html=True)
-            ket = st.text_area("Keterangan", label_visibility="collapsed", height=100)
         
-        st.write("")
-        if st.button("💾 SIMPAN DATA", type="primary", use_container_width=True):
-            if nopol_display == "-": st.warning("⚠️ Pilih unit kendaraan.")
-            else:
-                row = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Nama_Security": USER_NAME, "Tanggal": tanggal.strftime("%Y-%m-%d"),
-                    "Merk_Kendaraan": pilih_mobil, "Nomor_Polisi": nopol_display, "Kilometer": kilometer,
-                    "Kaca_Depan": kd, "Kaca_Kiri": kk, "Kaca_Kanan": kka, "Spion_Kanan": sk, "Spion_Kiri": ski, "Spion_Dalam": sd,
-                    "Ban_Kanan_Depan": bkd, "Ban_Kiri_Depan": bkid, "Ban_Kanan_Belakang": bkb, "Ban_Kiri_Belakang": bkib, "Ban_Serep": bs,
-                    "Ext_Talang_Air": eta, "Ext_Plat_Belakang": epb, "Ext_Plat_Depan": epd, "Body_Depan": bod, "Body_Grill": bog, "Body_Fender": bof,
-                    "Pintu_D_Kanan": pdk, "Pintu_D_Kiri": pdki, "Pintu_B_Kanan": pbk, "Pintu_B_Kiri": pbki, "Pintu_Bagasi": pbg,
-                    "Int_Jok": ij, "Int_Stir": ist, "Int_Karpet": ik, "Int_Persneling": ip, "Int_Rem_Tangan": irt, "Int_Dashboard": idb, "Int_AC": iac,
-                    "Mesin_Oli": mo, "Mesin_Minyak_Rem": mmr, "Mesin_Air_Radiator": mar, "Mesin_Air_Accu": maa, "Mesin_Air_Wiper": maw,
-                    "Lampu_Utama": lu, "Lampu_Kecil": lk, "Lampu_Rem": lr, "Sein_Depan": snd, "Sein_Belakang": snb,
-                    "Kunci_Roda": kr, "Dongkrak": dg, "P3K": p3k, "STNK": stnk, "Keterangan": ket
-                }])
-                try:
-                    exist = conn.read(worksheet="data_cek", ttl=0)
-                    upd = pd.concat([exist, row], ignore_index=True)
-                    conn.update(worksheet="data_cek", data=upd)
-                    st.success("✅ Tersimpan!"); st.balloons()
-                except Exception as e: st.error(f"Gagal simpan: {e}")
+        with st.form("form_checklist"):
+            def opsi(k): return st.radio(k, ["Baik", "Rusak", "Hilang/Kurang"], horizontal=True, label_visibility="collapsed", key=k)
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["🪟 Eksterior & Pintu", "🚗 Ban & Kaki-kaki", "🛋️ Interior", "⚙️ Mesin", "💡 Lampu & Kelengkapan"])
 
-    # --- HALAMAN 2: LAPORAN & DETAIL VIEW ---
+            with tab1:
+                ca, cb = st.columns(2)
+                with ca: st.write("**Kaca Depan**"); kd=opsi("Kaca_Depan"); st.write("**Kaca Kiri**"); kk=opsi("Kaca_Kiri"); st.write("**Kaca Kanan**"); kka=opsi("Kaca_Kanan"); st.write("**Spion Kanan**"); sk=opsi("Spion_Kanan"); st.write("**Spion Kiri**"); ski=opsi("Spion_Kiri"); st.write("**Spion Dalam**"); sd=opsi("Spion_Dalam"); st.divider(); st.write("**Body Depan**"); bod=opsi("Body_Depan"); st.write("**Body Grill**"); bog=opsi("Body_Grill"); st.write("**Body Fender**"); bof=opsi("Body_Fender")
+                with cb: st.write("**Ext. Talang Air**"); eta=opsi("Ext_Talang_Air"); st.write("**Ext. Plat Depan**"); epd=opsi("Ext_Plat_Depan"); st.write("**Ext. Plat Belakang**"); epb=opsi("Ext_Plat_Belakang"); st.divider(); st.write("**Pintu Dpn Kanan**"); pdk=opsi("Pintu_D_Kanan"); st.write("**Pintu Dpn Kiri**"); pdki=opsi("Pintu_D_Kiri"); st.write("**Pintu Blk Kanan**"); pbk=opsi("Pintu_B_Kanan"); st.write("**Pintu Blk Kiri**"); pbki=opsi("Pintu_B_Kiri"); st.write("**Pintu Bagasi**"); pbg=opsi("Pintu_Bagasi")
+            with tab2:
+                cc, cd = st.columns(2)
+                with cc: st.write("**Ban Kanan Depan**"); bkd=opsi("Ban_Kanan_Depan"); st.write("**Ban Kiri Depan**"); bkid=opsi("Ban_Kiri_Depan"); st.write("**Ban Serep**"); bs=opsi("Ban_Serep")
+                with cd: st.write("**Ban Kanan Belakang**"); bkb=opsi("Ban_Kanan_Belakang"); st.write("**Ban Kiri Belakang**"); bkib=opsi("Ban_Kiri_Belakang")
+            with tab3:
+                ce, cf = st.columns(2)
+                with ce: st.write("**Jok**"); ij=opsi("Int_Jok"); st.write("**Stir**"); ist=opsi("Int_Stir"); st.write("**Karpet**"); ik=opsi("Int_Karpet"); st.write("**Persneling**"); ip=opsi("Int_Persneling")
+                with cf: st.write("**Rem Tangan**"); irt=opsi("Int_Rem_Tangan"); st.write("**Dashboard**"); idb=opsi("Int_Dashboard"); st.write("**AC**"); iac=opsi("Int_AC")
+            with tab4:
+                cg, ch = st.columns(2)
+                with cg: st.write("**Oli Mesin**"); mo=opsi("Mesin_Oli"); st.write("**Minyak Rem**"); mmr=opsi("Mesin_Minyak_Rem"); st.write("**Air Radiator**"); mar=opsi("Mesin_Air_Radiator")
+                with ch: st.write("**Air Accu**"); maa=opsi("Mesin_Air_Accu"); st.write("**Air Wiper**"); maw=opsi("Mesin_Air_Wiper")
+            with tab5:
+                ci, cj = st.columns(2)
+                with ci: st.write("**Lampu Utama**"); lu=opsi("Lampu_Utama"); st.write("**Lampu Kecil**"); lk=opsi("Lampu_Kecil"); st.write("**Lampu Rem**"); lr=opsi("Lampu_Rem"); st.write("**Sein Depan**"); snd=opsi("Sein_Depan"); st.write("**Sein Belakang**"); snb=opsi("Sein_Belakang")
+                with cj: st.write("**Kunci Roda**"); kr=opsi("Kunci_Roda"); st.write("**Dongkrak**"); dg=opsi("Dongkrak"); st.write("**P3K**"); p3k=opsi("P3K"); st.write("**STNK**"); stnk=opsi("STNK")
+
+            st.write("---")
+            
+            # --- UPLOAD FOTO (DI DALAM FORM) ---
+            st.markdown("##### 📸 Dokumentasi Foto")
+            uploaded_file = st.file_uploader("Upload Foto Bukti/Kerusakan (Otomatis Dikecilkan)", type=['jpg', 'jpeg', 'png'])
+            
+            st.write("---")
+            st.warning("📝 CATATAN TAMBAHAN (Wajib diisi jika ada kerusakan)")
+            ket = st.text_area("Keterangan", label_visibility="collapsed", height=100)
+            
+            submit_btn = st.form_submit_button("💾 SIMPAN DATA PEMERIKSAAN", type="primary", use_container_width=True)
+
+            if submit_btn:
+                if nopol_display == "-" or not df_mobil.empty and pilih_mobil == "": st.warning("⚠️ Pilih unit kendaraan.")
+                else:
+                    # PROSES KOMPRESI FOTO
+                    foto_b64 = ""
+                    if uploaded_file is not None:
+                        foto_b64 = compress_image(uploaded_file)
+                    
+                    row = pd.DataFrame([{
+                        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Nama_Security": USER_NAME, "Tanggal": tanggal.strftime("%Y-%m-%d"),
+                        "Merk_Kendaraan": pilih_mobil, "Nomor_Polisi": nopol_display, "Kilometer": kilometer,
+                        "Kaca_Depan": kd, "Kaca_Kiri": kk, "Kaca_Kanan": kka, "Spion_Kanan": sk, "Spion_Kiri": ski, "Spion_Dalam": sd,
+                        "Ban_Kanan_Depan": bkd, "Ban_Kiri_Depan": bkid, "Ban_Kanan_Belakang": bkb, "Ban_Kiri_Belakang": bkib, "Ban_Serep": bs,
+                        "Ext_Talang_Air": eta, "Ext_Plat_Belakang": epb, "Ext_Plat_Depan": epd, "Body_Depan": bod, "Body_Grill": bog, "Body_Fender": bof,
+                        "Pintu_D_Kanan": pdk, "Pintu_D_Kiri": pdki, "Pintu_B_Kanan": pbk, "Pintu_B_Kiri": pbki, "Pintu_Bagasi": pbg,
+                        "Int_Jok": ij, "Int_Stir": ist, "Int_Karpet": ik, "Int_Persneling": ip, "Int_Rem_Tangan": irt, "Int_Dashboard": idb, "Int_AC": iac,
+                        "Mesin_Oli": mo, "Mesin_Minyak_Rem": mmr, "Mesin_Air_Radiator": mar, "Mesin_Air_Accu": maa, "Mesin_Air_Wiper": maw,
+                        "Lampu_Utama": lu, "Lampu_Kecil": lk, "Lampu_Rem": lr, "Sein_Depan": snd, "Sein_Belakang": snb,
+                        "Kunci_Roda": kr, "Dongkrak": dg, "P3K": p3k, "STNK": stnk, 
+                        "Keterangan": ket,
+                        "Foto_Bukti": foto_b64 # KOLOM BARU
+                    }])
+                    try:
+                        exist = conn.read(worksheet="data_cek", ttl=0)
+                        # Pastikan kolom Foto_Bukti ada di sheet
+                        if 'Foto_Bukti' not in exist.columns:
+                            exist['Foto_Bukti'] = ""
+                        
+                        upd = pd.concat([exist, row], ignore_index=True)
+                        conn.update(worksheet="data_cek", data=upd)
+                        st.success("✅ Tersimpan!"); st.balloons()
+                    except Exception as e: st.error(f"Gagal simpan: {e}")
+
+    # --- HALAMAN 2: LAPORAN ---
     elif selected == "Laporan Data":
         st.markdown("<div class='header-title'>🖨️ Laporan & Kontrol Data</div>", unsafe_allow_html=True)
         
@@ -371,7 +442,6 @@ if check_login():
             df_lap['Tanggal'] = pd.to_datetime(df_lap['Tanggal'])
             df_lap = df_lap.sort_values('Timestamp', ascending=False)
             
-            # --- 1. FILTER AREA ---
             with st.container():
                 st.markdown("<div class='stCard'>", unsafe_allow_html=True)
                 fc1, fc2 = st.columns(2)
@@ -379,44 +449,30 @@ if check_login():
                 with fc2: f_bln = st.selectbox("Periode Bulan", ["Semua"] + sorted(df_lap['Tanggal'].dt.strftime('%Y-%m').unique().tolist(), reverse=True))
                 st.markdown("</div>", unsafe_allow_html=True)
             
-            # Filter Logic
             view = df_lap.copy()
             if f_mobil: view = view[view['Merk_Kendaraan'].isin(f_mobil)]
             if f_bln != "Semua": view = view[view['Tanggal'].dt.strftime('%Y-%m') == f_bln]
             
-            if len(view) == 0:
-                st.info("Data tidak ditemukan.")
+            if len(view) == 0: st.info("Data tidak ditemukan.")
             else:
-                # --- 2. SELECTOR (PILIH DATA) ---
                 st.write("#### 🔍 Pilih Data Pemeriksaan")
-                
-                # Buat Label Dropdown yang Informatif
                 pilihan_list = view.index.tolist()
                 label_map = {i: f"{view.loc[i, 'Tanggal'].date()} | {view.loc[i, 'Merk_Kendaraan']} | {view.loc[i, 'Nama_Security']}" for i in pilihan_list}
-                
                 selected_id = st.selectbox("Pilih Riwayat:", pilihan_list, format_func=lambda x: label_map[x])
-                
                 st.write("---")
                 
-                # --- 3. DETAIL VIEW (FORM MODE) ---
-                # Ambil satu baris data
                 row = view.loc[selected_id]
                 
-                # Tampilkan Header Info
                 with st.container():
-                    st.markdown(f"""
-                    <div class='stCard' style='border-left: 5px solid #3B82F6;'>
-                        <h3>📑 Detail Pemeriksaan: {row['Merk_Kendaraan']}</h3>
-                        <p>
-                            <b>Tanggal:</b> {row['Tanggal'].date()} &nbsp;|&nbsp; 
-                            <b>Nopol:</b> {row['Nomor_Polisi']} &nbsp;|&nbsp; 
-                            <b>Inspector:</b> {row['Nama_Security']} &nbsp;|&nbsp; 
-                            <b>KM:</b> {row['Kilometer']}
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"""<div class='stCard' style='border-left: 5px solid #3B82F6;'><h3>📑 Detail: {row['Merk_Kendaraan']}</h3><p><b>Tanggal:</b> {row['Tanggal'].date()} &nbsp;|&nbsp; <b>Nopol:</b> {row['Nomor_Polisi']} &nbsp;|&nbsp; <b>Inspector:</b> {row['Nama_Security']} &nbsp;|&nbsp; <b>KM:</b> {row['Kilometer']}</p></div>""", unsafe_allow_html=True)
                 
-                # Tampilkan Item per Kategori (Dengan Warna)
+                # TAMPILAN FOTO DI PREVIEW
+                if 'Foto_Bukti' in row and row['Foto_Bukti'] and len(str(row['Foto_Bukti'])) > 10:
+                    try:
+                        img_data = base64.b64decode(row['Foto_Bukti'])
+                        st.image(img_data, caption="Foto Bukti/Kerusakan", width=300)
+                    except: pass
+                
                 items_map = {
                     "Kaca & Spion": ['Kaca_Depan', 'Kaca_Kiri', 'Kaca_Kanan', 'Spion_Kanan', 'Spion_Kiri', 'Spion_Dalam'],
                     "Ban & Roda": ['Ban_Kanan_Depan', 'Ban_Kiri_Depan', 'Ban_Kanan_Belakang', 'Ban_Kiri_Belakang', 'Ban_Serep'],
@@ -428,28 +484,113 @@ if check_login():
                     "Kelengkapan": ['Kunci_Roda', 'Dongkrak', 'P3K', 'STNK']
                 }
 
-                # Looping Layout Grid
                 for category, cols in items_map.items():
                     st.markdown(f"##### {category}")
-                    columns = st.columns(4) # 4 Kolom per baris agar rapi
+                    columns = st.columns(4)
                     for idx, col_name in enumerate(cols):
                         val = row.get(col_name, "-")
-                        with columns[idx % 4]:
-                            render_item(col_name, val)
+                        with columns[idx % 4]: render_item(col_name, val)
                     st.divider()
                 
-                # Catatan
-                st.markdown(f"""
-                <div class='warning-box'>
-                    📝 CATATAN TAMBAHAN:<br>
-                    {row['Keterangan'] if row['Keterangan'] else "-"}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.write("")
-                # Tombol Download PDF untuk Data TERPILIH INI
-                if st.button("📄 DOWNLOAD PDF LAPORAN INI", type="primary", use_container_width=True):
+                st.warning(f"📝 CATATAN: {row['Keterangan'] if row['Keterangan'] else '-'}")
+                if st.button("📄 DOWNLOAD PDF", type="primary", use_container_width=True):
                     pdf_data = create_pdf(row)
-                    st.download_button("⬇️ Klik Disini untuk Unduh", pdf_data, f"Laporan_{row['Merk_Kendaraan']}.pdf", "application/pdf")
+                    st.download_button("⬇️ Unduh File", pdf_data, f"Laporan_{row['Merk_Kendaraan']}.pdf", "application/pdf")
 
         else: st.info("Belum ada data.")
+
+    # --- HALAMAN 3: DASHBOARD & KONTROL ---
+    elif selected == "Dashboard & Kontrol":
+        # (Kode Dashboard Sama Seperti Sebelumnya)
+        st.markdown("<div class='header-title'>📊 Dashboard & Kontrol Unit</div>", unsafe_allow_html=True)
+        
+        df_history = get_laporan_cek()
+        df_mobil = get_data_mobil()
+        
+        if not df_history.empty and not df_mobil.empty:
+            st.subheader("📋 Status Kontrol Pemeriksaan (Periode 2 Minggu)")
+            
+            status_data = []
+            today = datetime.now()
+            
+            for index, row in df_mobil.iterrows():
+                nama_mobil = row['Nama_Mobil']
+                nopol = row['Nomor_Polisi']
+                hist = df_history[df_history['Merk_Kendaraan'] == nama_mobil]
+                
+                if not hist.empty:
+                    hist['Tanggal'] = pd.to_datetime(hist['Tanggal'])
+                    last_check = hist.sort_values('Tanggal', ascending=False).iloc[0]['Tanggal']
+                    days_diff = (today - last_check).days
+                    
+                    if days_diff <= 14:
+                        status = "✅ Sudah Dicek"
+                        keterangan_status = f"{days_diff} hari yang lalu"
+                    else:
+                        status = "⚠️ Perlu Cek"
+                        keterangan_status = f"Telat {days_diff} hari"
+                    
+                    tgl_str = last_check.strftime("%d-%b-%Y")
+                else:
+                    status = "❌ Belum Pernah"
+                    tgl_str = "-"
+                    keterangan_status = "Data Kosong"
+                    days_diff = 999
+                
+                status_data.append({
+                    "Unit Kendaraan": nama_mobil,
+                    "Plat Nomor": nopol,
+                    "Terakhir Cek": tgl_str,
+                    "Status": status,
+                    "Keterangan": keterangan_status,
+                    "sort_key": days_diff
+                })
+            
+            df_status = pd.DataFrame(status_data).sort_values('sort_key', ascending=True)
+            st.dataframe(df_status[['Unit Kendaraan', 'Plat Nomor', 'Terakhir Cek', 'Status', 'Keterangan']], use_container_width=True, hide_index=True)
+            
+            st.divider()
+            st.subheader("📈 Analisis Kerusakan")
+            
+            df_history['Tanggal'] = pd.to_datetime(df_history['Tanggal'])
+            bln_dash = st.selectbox("Filter Bulan Grafik", ["Semua"] + sorted(df_history['Tanggal'].dt.strftime('%Y-%m').unique().tolist(), reverse=True))
+            
+            df_dash = df_history.copy()
+            if bln_dash != "Semua":
+                df_dash = df_dash[df_dash['Tanggal'].dt.strftime('%Y-%m') == bln_dash]
+
+            if not df_dash.empty:
+                total_cek = len(df_dash)
+                cols_check = [c for c in df_dash.columns if c not in ['Timestamp','Nama_Security','Tanggal','Merk_Kendaraan','Nomor_Polisi','Kilometer','Keterangan', 'Foto_Bukti']]
+                
+                total_rusak_count = 0
+                rusak_per_mobil = {}
+                rusak_per_item = {}
+                
+                for idx, r in df_dash.iterrows():
+                    for c in cols_check:
+                        val = r[c]
+                        if val in ["Rusak", "Hilang/Kurang"]:
+                            total_rusak_count += 1
+                            mobil = r['Merk_Kendaraan']
+                            rusak_per_mobil[mobil] = rusak_per_mobil.get(mobil, 0) + 1
+                            rusak_per_item[c] = rusak_per_item.get(c, 0) + 1
+
+                c_k1, c_k2 = st.columns(2)
+                with c_k1: st.metric("Total Pemeriksaan", total_cek)
+                with c_k2: st.metric("Total Temuan Kerusakan", total_rusak_count)
+                
+                g1, g2 = st.columns(2)
+                with g1:
+                    st.write("**Kendaraan Sering Rusak**")
+                    if rusak_per_mobil:
+                        st.bar_chart(pd.DataFrame(list(rusak_per_mobil.items()), columns=['Mobil', 'Jumlah']).set_index('Mobil'))
+                    else: st.info("Tidak ada data.")
+                with g2:
+                    st.write("**Komponen Sering Rusak**")
+                    if rusak_per_item:
+                        st.bar_chart(pd.DataFrame(list(rusak_per_item.items()), columns=['Item', 'Jumlah']).set_index('Item'))
+                    else: st.info("Tidak ada data.")
+            else: st.info("Tidak ada data periode ini.")
+            
+        else: st.info("Database masih kosong.")
