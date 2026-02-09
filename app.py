@@ -109,7 +109,8 @@ def check_login():
     if not st.session_state['logged_in']:
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            st.markdown("<br><br><div style='text-align:center; background:white; padding:30px; border-radius:15px; box-shadow:0 4px 15px rgba(0,0,0,0.1);'><h2>🚘 Vehicle Inspector</h2><p style='color:gray;'>Silakan masuk untuk melanjutkan</p></div>", unsafe_allow_html=True)
+            st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/Logo_Kementerian_Pelindungan_Pekerja_Migran_Indonesia_-_BP2MI_v2_%282024%29.svg/960px-Logo_Kementerian_Pelindungan_Pekerja_Migran_Indonesia_-_BP2MI_v2_%282024%29.svg.png", width=100)
+            st.markdown("### Login Sistem Informasi Absensi")
             username = st.text_input("Username"); password = st.text_input("Password", type="password")
             if st.button("Masuk Sistem", type="primary", use_container_width=True):
                 df_users = get_users_db()
